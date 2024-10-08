@@ -101,3 +101,271 @@ Esto es lo que los revisores buscarán cuando evalúen tu proyecto:
 ¿Mantuviste la estructura del proyecto y el código limpio?
 '''
 
+
+'''
+El objetivo es encontrar la región más rentable para perforar 200 nuevos pozos de petróleo. Para ello, se usará un modelo de 
+regresión lineal para predecir el volumen de reservas en cada pozo y luego se seleccionará las regiones con mayor potencial de ganancia, 
+considerando tanto el beneficio promedio como el riesgo.
+'''
+
+
+# Librerias usadas: 
+import pandas as pd
+import numpy as np
+import matplotlib.pyplot as plt
+from sklearn.model_selection import train_test_split
+from sklearn.linear_model import LinearRegression
+from sklearn.metrics import mean_squared_error
+from sklearn.preprocessing import StandardScaler
+
+
+# Cargar los archivos CSV
+# Lista de archivos
+file_paths = ['datasets/geo_data_0.csv', 'datasets/geo_data_1.csv', 'datasets/geo_data_2.csv']
+
+
+# Función para limpiar y preparar los datos
+def prepare_data(df):
+    # Eliminar duplicados
+    df = df.drop_duplicates()
+    
+    # Verificar y manejar valores nulos
+    # Si hay valores nulos, usar interpolación lineal, si no, rellenar con la mediana
+    if df.isnull().sum().sum() > 0:
+        print("Valores nulos detectados. Aplicando interpolación o llenado con mediana.")
+        df = df.interpolate(method='linear', limit_direction='forward', axis=0)  # Interpolación
+        df.fillna(df.median(), inplace=True)  # Rellenar cualquier nulo restante con la mediana
+
+    # Estandarizar las características geológicas (f0, f1, f2)
+    scaler = StandardScaler()
+    df[['f0', 'f1', 'f2']] = scaler.fit_transform(df[['f0', 'f1', 'f2']])
+
+    return df
+
+# Cargar los archivos CSV con preparación de datos
+for file in file_paths:
+    # Cargar el archivo en un DataFrame
+    df = pd.read_csv(file)
+    
+    # Preparar los datos (limpieza y estandarización)
+    df = prepare_data(df)
+
+    # Mostrar las primeras 5 filas y resumen estadístico después de la preparación
+    print(f"Primeras 5 filas de {file} después de la limpieza y estandarización:")
+    print(df.head())
+
+    print(f"\nResumen estadístico de {file} después de la limpieza y estandarización:")
+    print(df.describe())
+    print("\n")
+
+'''
+Este paso permitirá observar las características de los datos y realizar una limpieza en caso necesario.
+
+Explicación del proceso:
+Eliminación de duplicados: Se eliminan filas duplicadas que podrían afectar los resultados del modelo. Esto asegura que cada fila sea 
+única.
+
+Interpolación y llenado de valores nulos:
+Si se detectan valores nulos, se aplica interpolación lineal para predecir los valores faltantes basándose en los valores vecinos.
+Si tras la interpolación aún quedan valores nulos, estos se rellenan con la mediana de la columna correspondiente, minimizando el impacto 
+de valores atípicos.
+Estandarización de características geológicas: Las columnas f0, f1, y f2 se estandarizan para que tengan una distribución normal con media 
+0 y desviación estándar de 1. Esto es importante cuando se utilizan modelos como la regresión lineal, ya que el modelo asume que las 
+características están en la misma escala.
+'''
+
+
+'''
+Entrenar y probar el modelo en cada región
+Se va dividir los datos en conjunto de entrenamiento y validación en una proporción de 75:25, entrenar un modelo de regresión lineal y 
+hacer predicciones.
+'''
+
+
+# Función para entrenar y evaluar el modelo
+def train_and_evaluate_models(file_paths):
+    results = {}
+    
+    for i, file_path in enumerate(file_paths):
+        # Cargar los datos
+        data = pd.read_csv(file_path)
+        
+        # Dividir en características (f0, f1, f2) y el objetivo (product)
+        features = data[['f0', 'f1', 'f2']]
+        target = data['product']
+        
+        # Dividir en conjunto de entrenamiento y validación
+        X_train, X_valid, y_train, y_valid = train_test_split(features, target, test_size=0.25, random_state=42)
+        
+        # Entrenar el modelo
+        model = LinearRegression()
+        model.fit(X_train, y_train)
+        
+        # Hacer predicciones
+        predictions = model.predict(X_valid)
+        
+        # Calcular RMSE
+        rmse = mean_squared_error(y_valid, predictions, squared=False)
+
+        # Calcular el volumen medio de reservas predicho
+        mean_predicted_volume = np.mean(predictions)
+        
+        # Almacenar los resultados (predicciones y respuestas reales)
+        results[f"region_{i}"] = {
+            'predictions': pd.Series(predictions, index=y_valid.index),
+            'actual': y_valid,
+            'rmse': rmse,
+            'mean_predicted_volume': mean_predicted_volume
+        }
+        
+         # Mostrar RMSE y volumen medio de reservas predicho para cada archivo
+        print(f"RMSE para región {i}: {rmse}")
+        print(f"Volumen medio de reservas predicho para región {i}: {mean_predicted_volume:.2f} miles de barriles")
+    
+    return results
+
+
+# Aplicar la función para procesar las tres regiones
+regions_results = train_and_evaluate_models(file_paths)
+
+
+# Mostrar una muestra de las predicciones y valores reales para cada región
+for region, result in regions_results.items():
+    print(f"Resultados para {region}:")
+    print(pd.DataFrame({'predictions': result['predictions'], 'actual': result['actual']}).head())
+
+
+# Función para graficar el RMSE y el volumen medio de reservas predicho
+def plot_rmse_and_volume(results):
+    regions = list(results.keys())
+    rmse_values = [results[region]['rmse'] for region in regions]
+    mean_volumes = [results[region]['mean_predicted_volume'] for region in regions]
+
+    # Gráfico de barras para el RMSE
+    plt.figure(figsize=(10, 5))
+
+    plt.subplot(1, 2, 1)
+    plt.bar(regions, rmse_values, color='orange')
+    plt.title('RMSE por Región')
+    plt.xlabel('Región')
+    plt.ylabel('RMSE')
+
+    # Gráfico de barras para el volumen medio de reservas predicho
+    plt.subplot(1, 2, 2)
+    plt.bar(regions, mean_volumes, color='blue')
+    plt.title('Volumen Medio de Reservas Predicho (Miles de Barriles)')
+    plt.xlabel('Región')
+    plt.ylabel('Volumen Medio (Miles de Barriles)')
+
+    # Mostrar ambos gráficos
+    plt.tight_layout()
+    plt.show()
+
+# Llamar a la función para graficar los resultados de las tres regiones
+plot_rmse_and_volume(regions_results)
+
+
+'''
+Cálculo del volumen medio de reservas predicho:
+Después de realizar las predicciones con el modelo de regresión lineal, se agregó una línea para calcular el promedio de las predicciones. Este valor representa el volumen medio de reservas que el modelo predice para los pozos en la región.
+Visualización del RMSE y el volumen medio predicho:
+Ahora se muestra explícitamente el valor del RMSE y el volumen medio de reservas predicho en miles de barriles para cada región, 
+facilitando una mejor interpretación de los resultados y permitiendo evaluar tanto el error como el rendimiento promedio del modelo.
+'''
+
+
+'''
+Conclusión: Aquí evaluamos el rendimiento del modelo y el error de las predicciones usando RMSE. 
+El objetivo es que el modelo prediga correctamente el volumen de reservas basado en las características geológicas.
+'''
+
+
+'''
+ Preparación para calcular las ganancias
+ Dado que el presupuesto para desarrollar 200 pozos es de 100 millones de dólares, necesitamos que cada pozo produzca en promedio 500,000 
+ dólares. La ganancia de un barril es de 4.5 USD.
+'''
+
+
+# Función para calcular la ganancia
+def calculate_profit(predictions, count_wells=200, price_per_barrel=4500):
+    # Seleccionar los pozos con los valores predichos más altos
+    top_wells = predictions.sort_values(ascending=False)[:count_wells]
+    total_reserve = top_wells.sum()  # Reservas totales en miles de barriles
+    profit = total_reserve * price_per_barrel  # Ganancia en dólares
+    return profit
+
+
+# Función para calcular riesgos y ganancias con bootstrapping
+def bootstrap_profit(predictions, n_samples=1000, count_wells=200, price_per_barrel=4500):
+    profits = []
+    for _ in range(n_samples):
+        sample = predictions.sample(n=len(predictions), replace=True)
+        profit = calculate_profit(sample, count_wells, price_per_barrel)
+        profits.append(profit)
+    return np.array(profits)
+
+# Análisis de riesgos y ganancias por región
+for region, result in regions_results.items():
+    predictions = result['predictions']
+    
+    # Aplicar bootstrapping
+    profits = bootstrap_profit(predictions)
+    
+    # Calcular el beneficio promedio, intervalo de confianza y riesgo de pérdidas
+    mean_profit = np.mean(profits)
+    confidence_interval = np.percentile(profits, [2.5, 97.5])
+    risk_of_loss = np.mean(profits < 0) * 100
+    
+    print(f'\nResultados para {region}:')
+    print(f'Beneficio promedio: {mean_profit}')
+    print(f'Intervalo de confianza (95%): {confidence_interval}')
+    print(f'Riesgo de pérdidas: {risk_of_loss}%')
+
+# Seleccionar la mejor región para el desarrollo
+best_region = None
+highest_mean_profit = -float('inf')
+
+
+for region, result in regions_results.items():
+    predictions = result['predictions']
+    
+    # Aplicar bootstrapping
+    profits = bootstrap_profit(predictions)
+    
+    # Calcular el beneficio promedio
+    mean_profit = np.mean(profits)
+    
+    if mean_profit > highest_mean_profit:
+        highest_mean_profit = mean_profit
+        best_region = region
+
+print(f'\nLa mejor región para el desarrollo de pozos es: {best_region} con un beneficio promedio de {highest_mean_profit}')
+
+'''
+Resumen de los resultados:
+Región 0:
+
+RMSE: 37.76
+Beneficio promedio: $138,979,062.11
+Intervalo de confianza (95%): [$137,773,503, $140,259,204]
+Riesgo de pérdidas: 0.0%
+Región 1:
+
+RMSE: 0.89
+Beneficio promedio: $124,869,972.83
+Intervalo de confianza (95%): [$124,815,734, $124,923,436]
+Riesgo de pérdidas: 0.0%
+Región 2:
+
+RMSE: 40.15
+Beneficio promedio: $133,752,965.51
+Intervalo de confianza (95%): [$132,628,271, $134,789,853]
+Riesgo de pérdidas: 0.0%
+'''
+
+'''
+Conclusión:
+La mejor región para el desarrollo de los 200 nuevos pozos es Región 0, ya que ofrece el beneficio promedio más alto de $138,979,062.11 y 
+no presenta ningún riesgo de pérdidas según la técnica de bootstrapping.
+'''
