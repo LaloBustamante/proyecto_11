@@ -322,6 +322,13 @@ for region, result in regions_results.items():
     print(f'Intervalo de confianza (95%): {confidence_interval}')
     print(f'Riesgo de pérdidas: {risk_of_loss}%')
 
+
+# Función para calcular la métrica ponderada (beneficio / RMSE)
+def calculate_weighted_score(mean_profit, rmse):
+    # Penalizar regiones con RMSE alto
+    return mean_profit / rmse
+
+
 # Seleccionar la mejor región para el desarrollo
 best_region = None
 highest_mean_profit = -float('inf')
@@ -336,8 +343,14 @@ for region, result in regions_results.items():
     # Calcular el beneficio promedio
     mean_profit = np.mean(profits)
     
-    if mean_profit > highest_mean_profit:
-        highest_mean_profit = mean_profit
+    # Recuperar el RMSE del modelo
+    rmse = result['rmse']
+    
+    # Calcular el score ponderado (beneficio dividido por RMSE)
+    weighted_score = calculate_weighted_score(mean_profit, rmse)
+    
+    if weighted_score > highest_weighted_score:
+        highest_weighted_score = weighted_score
         best_region = region
 
 print(f'\nLa mejor región para el desarrollo de pozos es: {best_region} con un beneficio promedio de {highest_mean_profit}')
